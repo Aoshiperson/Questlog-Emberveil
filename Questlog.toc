@@ -1,0 +1,7 @@
+## Interface: 11200
+## Title: Questlog
+## Notes: 任务日志双宽
+## Author: Refactored
+## SavedVariablesPerCharacter: StandaloneStanceBarDB
+
+Questlog.lua
