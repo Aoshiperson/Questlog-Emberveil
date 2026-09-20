@@ -6,15 +6,15 @@
   改用暴雪原生贴图和默认外观。保留的是功能性代码：
     - 窗口拖动
     - 窗口/列表/详情区域的尺寸与布局
-    - 任务行数据（等级拼接显示 + 按难度着色）
+    - 任务行数据（等级拼接显示）
     - 原生事件钩子（QuestLog_OnShow / QuestLog_Update 刷新联动）
+    - 列表区/详情区的黑色装饰背景面板
 
   已确认删除、且不影响功能的部分：
     - 折叠图标系统（连带点击折叠/展开任务标题的功能）
     - 展开/收起详情面板的自绘箭头按钮（详情面板现在固定显示）
     - 任务等级显示开关（该配置项已不存在，等级信息始终显示）
     - 任务追踪记忆恢复、追踪标记、可拖动的任务追踪面板
-    - 主题开关判断（ThemeStyleUsesNativeChrome，之前恒定返回false，等于没用）
 
   单文件独立运行，不再共享全局 UnrealUI 表——所有工具函数都是本文件内的
   局部函数（local function），不对外暴露、不污染全局命名空间。
@@ -113,13 +113,57 @@ local function MakeWindowDraggable(id, frame)
   frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
 end
 
+local function StripAllTextures(target)
+  if not target or not target.GetRegions then return 0 end
+  local ok, regions = pcall(function() return { target:GetRegions() } end)
+  if not ok or type(regions) ~= "table" then return 0 end
+  local stripped, i = 0, nil
+  for i = 1, table.getn(regions) do
+    local region = regions[i]
+    local isTexture = false
+    if region and region.GetObjectType then
+      local typeOk, objectType = pcall(region.GetObjectType, region)
+      isTexture = typeOk and objectType == "Texture"
+    end
+    if isTexture then
+      HideRegion(region)
+      stripped = stripped + 1
+    end
+  end
+  return stripped
+end
+
+local function CreateBlackBackground(target)
+  if not target or not target.CreateTexture then return nil end
+  local bg = target:CreateTexture(nil, "BACKGROUND")
+  pcall(bg.SetTexture, bg, "Interface\\BUTTONS\\WHITE8X8")
+  pcall(bg.SetVertexColor, bg, 0, 0, 0, 0.85)
+  bg:SetAllPoints(target)
+  return bg
+end
+
+local function CreateDecorPanel(parent, anchor, offsetTL, offsetBR)
+  if not parent or not anchor then return nil end
+  local panel = CreateFrame("Frame", nil, parent)
+  local bg = panel:CreateTexture(nil, "BACKGROUND")
+  pcall(bg.SetTexture, bg, "Interface\\BUTTONS\\WHITE8X8")
+  pcall(bg.SetVertexColor, bg, 0, 0, 0, 0.74)
+  bg:SetAllPoints(panel)
+  panel:SetPoint("TOPLEFT", anchor, "TOPLEFT", offsetTL[1], offsetTL[2])
+  panel:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", offsetBR[1], offsetBR[2])
+  pcall(panel.EnableMouse, panel, false)
+  local levelOk, level = pcall(parent.GetFrameLevel, parent)
+  if levelOk and tonumber(level) then pcall(panel.SetFrameLevel, panel, level) end
+  return panel
+end
+
 --[[============================================================
   以下是 questlog.lua 原始逻辑，除末尾入口调用方式外未作改动
 ================================================================]]
 
 local QUEST_ROWS = 23
 
-local frame, detail, listScroll
+local frame, detail, listScroll, detailPanel
 
 local function IsShown(object)
   if not object or not object.IsShown then return false end
@@ -242,6 +286,10 @@ local function BuildFrame()
 
   pcall(frame.SetWidth, frame, 676)
   pcall(frame.SetHeight, frame, 440)
+  pcall(frame.DisableDrawLayer, frame, "BACKGROUND")
+  local strippedCount = StripAllTextures(frame)
+  Debug("questlog: stripped " .. tostring(strippedCount) .. " textures from frame")
+  CreateBlackBackground(frame)
 
   local title = G("QuestLogTitleText")
   if title then pcall(function() title:ClearAllPoints() title:SetPoint("TOP", frame, "TOP", 0, -10) end) end
@@ -266,10 +314,26 @@ local function BuildFrame()
   end
 
   pcall(function() listScroll:ClearAllPoints() listScroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -54) listScroll:SetHeight(350) end)
+  CreateDecorPanel(frame, listScroll, {-5, 5}, {26, -5})
 
   pcall(function() detail:ClearAllPoints() detail:SetPoint("TOPLEFT", listScroll, "TOPRIGHT", 35, 0) detail:SetHeight(376) end)
   local detailChild = G("QuestLogDetailScrollChildFrame")
   if detailChild then pcall(detailChild.SetHeight, detailChild, 376) end
+  detailPanel = CreateDecorPanel(frame, detail, {-5, 5}, {26, -5})
+  if not IsShown(detail) then pcall(detailPanel.Hide, detailPanel) end
+
+  local okShow, detailPrevOnShow = pcall(detail.GetScript, detail, "OnShow")
+  if not okShow then detailPrevOnShow = nil end
+  local okHide, detailPrevOnHide = pcall(detail.GetScript, detail, "OnHide")
+  if not okHide then detailPrevOnHide = nil end
+  detail:SetScript("OnShow", function(...)
+    if detailPrevOnShow then pcall(detailPrevOnShow, ...) end
+    if detailPanel then pcall(detailPanel.Show, detailPanel) end
+  end)
+  detail:SetScript("OnHide", function(...)
+    if detailPrevOnHide then pcall(detailPrevOnHide, ...) end
+    if detailPanel then pcall(detailPanel.Hide, detailPanel) end
+  end)
 
   BuildRows()
   StyleQuestItems()
