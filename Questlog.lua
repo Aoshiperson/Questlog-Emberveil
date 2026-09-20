@@ -8,7 +8,7 @@
     - 窗口/列表/详情区域的尺寸与布局
     - 任务行数据（等级拼接显示）
     - 原生事件钩子（QuestLog_OnShow / QuestLog_Update 刷新联动）
-    - 列表区/详情区的黑色装饰背景面板
+    - 列表区/详情区的黑色装饰背景面板 + 详情文字浅色化
 
   已确认删除、且不影响功能的部分：
     - 折叠图标系统（连带点击折叠/展开任务标题的功能）
@@ -155,6 +155,25 @@ local function CreateDecorPanel(parent, anchor, offsetTL, offsetBR)
   local levelOk, level = pcall(parent.GetFrameLevel, parent)
   if levelOk and tonumber(level) then pcall(panel.SetFrameLevel, panel, level) end
   return panel
+end
+
+local function SetDetailTextColor(r, g, b)
+  local names = {
+    "QuestLogQuestTitle", "QuestLogObjectivesText", "QuestLogQuestDescription",
+    "QuestLogDescriptionTitle", "QuestLogRewardTitleText", "QuestLogItemChooseText",
+    "QuestLogItemReceiveText", "QuestLogRequiredMoneyText", "QuestLogSpellLearnText",
+  }
+  local i
+  for i = 1, table.getn(names) do
+    local fs = G(names[i])
+    if fs then pcall(fs.SetTextColor, fs, r, g, b) end
+  end
+  for i = 1, 10 do
+    local objective = G("QuestLogObjective" .. i)
+    if objective then pcall(objective.SetTextColor, objective, r, g, b) end
+    local itemName = G("QuestLogItem" .. i .. "Name")
+    if itemName then pcall(itemName.SetTextColor, itemName, r, g, b) end
+  end
 end
 
 --[[============================================================
@@ -337,11 +356,13 @@ local function BuildFrame()
 
   BuildRows()
   StyleQuestItems()
+  SetDetailTextColor(0.92, 0.92, 0.92)
 
   PostHookGlobal("QuestLog_OnShow", function()
     pcall(function() frame:ClearAllPoints() frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 10, -104) end)
   end)
   PostHookGlobal("QuestLog_Update", function() UpdateRows() end)
+  PostHookGlobal("QuestLog_UpdateQuestDetails", function() SetDetailTextColor(0.92, 0.92, 0.92) end)
 
   if IsShown(frame) then UpdateRows() end
   return true
